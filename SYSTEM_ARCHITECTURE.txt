@@ -1,0 +1,261 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║           MOOD PREDICTION SYSTEM WITH MOCK APPLE HEALTH DATA              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+COMPONENT ARCHITECTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         MOBILE APP (React Native)                       │
+│                                                                         │
+│  ┌─────────────────┐                                                   │
+│  │  Survey Screen  │  5 Likert questions + optional journal note       │
+│  └────────┬────────┘                                                   │
+│           │                                                             │
+│  ┌────────▼─────────────────────────────────────────────────────────┐ │
+│  │ POST /predict/manual                                            │ │
+│  │ {mood_today, energy_today, stress_today, sleep_quality, ...}   │ │
+│  └────────┬─────────────────────────────────────────────────────────┘ │
+│           │                                                             │
+│  ┌────────▼────────────────────────────────────────────────────────┐  │
+│  │ Results Screen                                                  │  │
+│  │                                                                 │  │
+│  │ ┌─────────────────────────────────────────────────────────┐   │  │
+│  │ │ Health Data Used (Green Card)              Demo Badge   │   │  │
+│  │ │ ┌──────────┐  ┌───────┐  ┌──────────┐                 │   │  │
+│  │ │ │Sleep     │  │Steps  │  │Calories  │                 │   │  │
+│  │ │ │7.5 hrs   │  │8,200  │  │2,150 kcal│                 │   │  │
+│  │ │ └──────────┘  └───────┘  └──────────┘                 │   │  │
+│  │ └─────────────────────────────────────────────────────────┘   │  │
+│  │                                                                 │  │
+│  │ ┌─────────────────────────────────────────────────────────┐   │  │
+│  │ │ Tomorrow: Steady                              [badge]   │   │  │
+│  │ │ 3.47 / 5                                                │   │  │
+│  │ │ Tomorrow looks fairly close to today.                  │   │  │
+│  │ │                                                         │   │  │
+│  │ │ [stress pulling] [energy positive] [connection lifting]│   │  │
+│  │ └─────────────────────────────────────────────────────────┘   │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   │ HTTP
+                                   ▼
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           API SERVER (FastAPI)                          │
+│                    mood_prediction/api/main.py                          │
+│                                                                         │
+│  ┌────────────────────────────────────────────────────────────────┐   │
+│  │ POST /predict/manual                                          │   │
+│  │                                                               │   │
+│  │ Receives survey responses + optional journal note            │   │
+│  └────────────┬─────────────────────────────────────────────────┘   │
+│               │                                                      │
+│  ┌────────────▼──────────────────────────────────────────────────┐  │
+│  │ predict_mood_from_survey()                                   │  │
+│  │ (mood_prediction/model/predictor.py)                         │  │
+│  └────────────┬──────────────────────────────────────────────────┘  │
+│               │                                                      │
+│               ├─────────────────────┬──────────────────────────┐    │
+│               ▼                     ▼                          ▼    │
+│        ┌────────────┐        ┌────────────────┐       ┌──────────┐ │
+│        │ Survey     │        │ Health Data    │       │Gradient  │ │
+│        │ Responses  │        │ from CSV       │       │Boosting  │ │
+│        │            │        │                │       │Model     │ │
+│        │ • mood_t   │        │ sleep_hours    │       │          │ │
+│        │ • energy_t │        │ steps          │       │artifact/ │ │
+│        │ • stress_t │        │ calories_burn  │       │mood_*    │ │
+│        │ • sleep_q  │        │                │       │.pkl      │ │
+│        │ • social_c │        │ (from          │       │          │ │
+│        └─────┬──────┘        │  health_data   │       └──────┬───┘ │
+│              │               │  .csv)         │              │     │
+│              │               └────────┬───────┘              │     │
+│              └─────────────────┬──────┘                      │     │
+│                                ▼                            │     │
+│                       ┌─────────────────────┐               │     │
+│                       │ Feature Engineering │               │     │
+│                       │                     │               │     │
+│                       │ • happy (survey)    │               │     │
+│                       │ • sad (survey)      │               │     │
+│                       │ • sleep_hours ◄────┼─── FROM CSV   │     │
+│                       │ • activity_mean ◄──┼─── MAP STEPS  │     │
+│                       │ • exercise_int ◄───┼─ MAP CALORIES │     │
+│                       │ • stress_level      │               │     │
+│                       │ • phone_lock_* (s)  │               │     │
+│                       │ • conversation (s)  │               │     │
+│                       │ • phq9_score (s)    │               │     │
+│                       │ • (+ 7d rolling)    │               │     │
+│                       └─────────┬───────────┘               │     │
+│                                │                           │     │
+│                                └─────────────────┬─────────┘     │
+│                                                  │               │
+│                                          ┌───────▼──────────┐   │
+│                                          │ Prediction       │   │
+│                                          │                  │   │
+│                                          │ happy_score: 3.47│   │
+│                                          │ (clipped to 1-5) │   │
+│                                          └────────┬─────────┘   │
+│                                                   │               │
+│                       ┌───────────────────────────┘               │
+│                       │                                           │
+│  ┌────────────────────▼──────────────────────────────────────┐  │
+│  │ Build Insights                                            │  │
+│  │ • summary: "Tomorrow looks fairly close to today"        │  │
+│  │ • drivers: [stress pulling, energy positive, ...]        │  │
+│  │ • confidence_note: "Moderate confidence..."              │  │
+│  └────────────────────┬──────────────────────────────────────┘  │
+│                       │                                           │
+│  ┌────────────────────▼──────────────────────────────────────┐  │
+│  │ Response ← IMPORTANT: Include health_data!               │  │
+│  │ {                                                         │  │
+│  │   predicted_happy_score: 3.47,                           │  │
+│  │   summary: "Tomorrow looks fairly close to today.",      │  │
+│  │   likely_drivers: [...],                                 │  │
+│  │   confidence_note: "...",                                │  │
+│  │   health_data: {                                         │  │
+│  │     sleep_hours: 7.5,                  ← FROM CSV        │  │
+│  │     steps: 8200,                       ← FROM CSV        │  │
+│  │     calories_burned: 2150              ← FROM CSV        │  │
+│  │   }                                                       │  │
+│  │ }                                                         │  │
+│  └─────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   │ JSON Response
+                                   ▼
+                       (back to mobile app)
+
+
+DATA SOURCES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────┐
+│   mood_prediction/health_data.csv   │
+├─────────────────────────────────────┤
+│ date,user_id,sleep_hours,steps,...  │
+│ 2024-01-15,user_demo,7.5,8200,...   │
+│ 2024-01-16,user_demo,6.8,6500,...   │
+│ 2024-01-17,user_demo,8.2,10300,...  │
+│ ...                                 │
+└─────────────────────────────────────┘
+         ▲
+         │
+         └─ read by get_today_health_data()
+
+
+FEATURE MAPPING (What Makes This Work)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WITHOUT Health Data (Old Way):
+┌─────────────┐
+│sleep_quality│ (1-5 scale)  ──mapsto──> sleep_hours: 4.5-8.75 hrs
+└─────────────┘                         [Arbitrary mapping]
+
+WITH Health Data (New Way):
+┌─────────────┐
+│sleep_quality│ (1-5 scale)  ──ignored──> 
+└─────────────┘
+
+┌───────────────┐
+│sleep_hours    │ (from CSV)  ──mapsto──> 7.5 hrs [REAL DATA]
+└───────────────┘
+
+
+WITHOUT Health Data (Old Way):
+┌───────────┐
+│energy_     │ (1-5 scale)  ──average with calmness──> activity_mean: ~2.5
+└───────────┘                [Proxy guess]
+
+WITH Health Data (New Way):
+┌────────┐
+│ steps  │ (from CSV)  ──formula──> activity_mean: min(5, max(1, steps/4000))
+└────────┘                        8200 steps → 2.05 [REAL DATA]
+
+
+WITHOUT Health Data (Old Way):
+┌──────────┐
+│exercise_ │ (depends on survey)  ──average──> exercise_intensity: ~2-3
+└──────────┘                       [Proxy guess]
+
+WITH Health Data (New Way):
+┌──────────────┐
+│calories_burn │ (from CSV)  ──formula──> exercise: (cal - 1000) / 400
+└──────────────┘                       2150 cal → 2.875 [REAL DATA]
+
+
+KEY FILES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Backend:
+  • mood_prediction/health_data.csv
+    └─ Mock Apple Health data (10 days)
+
+  • mood_prediction/model/predictor.py
+    ├─ load_health_data() — reads CSV
+    ├─ get_today_health_data() — gets latest for user
+    └─ _build_manual_feature_values() — combines survey + health
+
+  • mood_prediction/api/main.py
+    ├─ HealthDataResponse — new schema
+    └─ PredictResponse — now includes health_data field
+
+Frontend:
+  • mobile-app/src/types.ts
+    ├─ HealthData — type definition
+    └─ PredictionResponse — updated
+
+  • mobile-app/App.tsx
+    ├─ Health data card rendering
+    └─ Styling for health metrics display
+
+
+FLOW SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+User Survey Input
+       │
+       ▼
+┌──────────────┐
+│  API Call    │────> Load Health CSV ──> Map to Features
+└──────────────┘       (get_today...)
+       │
+       ├──► Survey Response      │
+       │                         │
+       └────────────────┬────────┘
+                        ▼
+              ┌─────────────────────┐
+              │ Feature Engineering │
+              │ (survey + real data)│
+              └──────────┬──────────┘
+                         ▼
+              ┌─────────────────────┐
+              │ Gradient Boosting   │
+              │ Model Prediction    │
+              └──────────┬──────────┘
+                         ▼
+              ┌─────────────────────┐
+              │ Response with:      │
+              │ • prediction        │
+              │ • drivers           │
+              │ • health_data ◄─────┼─ Returns what was used
+              └──────────┬──────────┘
+                         ▼
+            Display on Mobile App
+             (green health card
+              + colored prediction)
+
+
+DEMO VALIDATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ Health data is loaded from CSV
+✓ Health data is used in feature engineering
+✓ Health data is returned in API response
+✓ Health data is displayed in mobile app
+✓ Different health data → different predictions (when other factors constant)
+
+Test: Try two surveys with same mood answers but different health data dates
+      You should see different predictions due to the health metrics!
+

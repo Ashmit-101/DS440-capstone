@@ -33,16 +33,15 @@ FEATURE_COLS: List[str] = [
     # Today's mood (strong autoregressive signal)
     "happy",
     "sad",
-    "happyornot",
-    "sadornot",
+    "sadornot",          # happyornot removed: permutation importance = 0.0
     # Self-reported sleep
     "sleep_hours",
-    "sleep_rate",
+    # sleep_rate removed: permutation importance = 0.0 (7d rolling kept below)
     # Self-reported stress
     "stress_level",
     # Self-reported exercise
-    "exercise_intensity",
-    "exercise_done",
+    # exercise_intensity removed: permutation importance = 0.0 (7d rolling kept)
+    # exercise_done removed: permutation importance = 0.0
     "walk_amount",
     # Passive activity sensing
     "activity_mean",
@@ -61,6 +60,21 @@ FEATURE_COLS: List[str] = [
     "phq9_score",
 ]
 
+SURVEY_FEATURE_COLS: List[str] = [
+    "happy",
+    "sad",
+    "sadornot",
+    "stress_level",
+    "sleep_rate",
+    "energy",
+    "social",
+    "happy_7d",
+    "stress_level_7d",
+    "sleep_rate_7d",
+    "energy_7d",
+    "social_7d",
+]
+
 TARGET_COL = "happy_tomorrow"
 
 # Columns for which 7-day rolling means are computed per user
@@ -68,6 +82,7 @@ ROLLING_BASE_COLS: List[str] = [
     "happy", "sad", "sleep_hours", "sleep_rate",
     "stress_level", "exercise_intensity", "activity_mean",
     "phone_locked_duration", "conversation_duration",
+    "energy", "social",
 ]
 
 
@@ -126,9 +141,9 @@ def build_training_dataset(user_ids: List[str]) -> pd.DataFrame:
         if daily.empty:
             log.debug("User %s skipped: no Mood EMA rows at all", uid)
             continue
-        if len(daily) < 2:
+        if len(daily) < 3:
             log.debug(
-                "User %s skipped: only %d mood day(s) — need ≥2 to form a training pair",
+                "User %s skipped: only %d mood day(s) — need ≥3 to form ≥2 training pairs",
                 uid, len(daily),
             )
             continue

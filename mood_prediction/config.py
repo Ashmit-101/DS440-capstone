@@ -20,3 +20,4 @@ PHQ9_PATH = DATASET_ROOT / "survey/PHQ-9.csv"
 
 # Trained model artifact
 MODEL_PATH = Path(__file__).parent / "model_artifacts" / "mood_model.pkl"
+SURVEY_MODEL_PATH = Path(__file__).parent / "model_artifacts" / "mood_model_survey.pkl"

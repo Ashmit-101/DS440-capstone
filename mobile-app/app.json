@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Mood Prediction",
+    "slug": "mood-prediction-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  }
+}
