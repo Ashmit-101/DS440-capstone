@@ -15,7 +15,7 @@ import { API_BASE_URL, fetchSurveySchema, submitManualPrediction } from "./src/a
 import { PredictionResponse, SurveyField } from "./src/types";
 
 const LIKERT_OPTIONS = [1, 2, 3, 4, 5];
-type Screen = "home" | "checkin";
+type Screen = "home" | "checkin" | "results";
 
 function buildScoreTone(score: number) {
   if (score >= 4.1) {
@@ -64,6 +64,52 @@ function buildDailySuggestions(
   }
 
   return ideas.slice(0, 3);
+}
+
+function buildSignalSummary(responses: Record<string, number>) {
+  const mood = responses.mood_today ?? 3;
+  const stress = responses.stress_today ?? 3;
+  const sleep = responses.sleep_quality ?? 3;
+  const energy = responses.energy_today ?? 3;
+  const connection = responses.social_connection ?? 3;
+
+  const strengths: string[] = [];
+  const watchouts: string[] = [];
+
+  if (sleep >= 4) {
+    strengths.push("Sleep looked supportive today");
+  } else if (sleep <= 2) {
+    watchouts.push("Sleep quality may drag tomorrow down");
+  }
+
+  if (stress <= 2) {
+    strengths.push("Lower stress is helping stability");
+  } else if (stress >= 4) {
+    watchouts.push("Stress is a major pressure point right now");
+  }
+
+  if (energy >= 4) {
+    strengths.push("Energy is giving you a useful lift");
+  } else if (energy <= 2) {
+    watchouts.push("Low energy makes tomorrow feel less steady");
+  }
+
+  if (connection >= 4) {
+    strengths.push("Connection is acting like a buffer");
+  } else if (connection <= 2) {
+    watchouts.push("Low connection may be weighing on the forecast");
+  }
+
+  if (mood >= 4) {
+    strengths.push("Today’s mood gives tomorrow a stronger baseline");
+  } else if (mood <= 2) {
+    watchouts.push("A lower mood today raises the need for a lighter tomorrow");
+  }
+
+  return {
+    strengths: strengths.slice(0, 3),
+    watchouts: watchouts.slice(0, 3),
+  };
 }
 
 export default function App() {
@@ -125,6 +171,10 @@ export default function App() {
     () => buildDailySuggestions(responses, prediction),
     [prediction, responses],
   );
+  const signalSummary = useMemo(
+    () => buildSignalSummary(responses),
+    [responses],
+  );
 
   function setAnswer(fieldKey: string, value: number) {
     setResponses((current) => ({
@@ -172,6 +222,7 @@ export default function App() {
         journal_note: journalNote.trim(),
       });
       setPrediction(result);
+      setScreen("results");
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -224,7 +275,7 @@ export default function App() {
               </Text>
             </View>
           </>
-        ) : loading ? (
+        ) : screen === "results" ? null : loading ? (
           <View style={styles.centerState}>
             <ActivityIndicator size="large" color="#0f766e" />
             <Text style={styles.stateText}>Loading your check-in...</Text>
@@ -355,8 +406,23 @@ export default function App() {
           </View>
         ) : null}
 
-        {prediction && scoreTone ? (
+        {screen === "results" && prediction && scoreTone ? (
           <View>
+            <View style={styles.resultsHero}>
+              <Text style={styles.kicker}>Tomorrow's outlook</Text>
+              <Text style={styles.resultsHeroTitle}>
+                Your forecast is ready, with the main signals and a simple action plan.
+              </Text>
+              <View style={styles.resultsActionRow}>
+                <Pressable onPress={goHome} style={styles.ghostButton}>
+                  <Text style={styles.ghostButtonText}>Home</Text>
+                </Pressable>
+                <Pressable onPress={resetCheckIn} style={styles.primaryInlineButton}>
+                  <Text style={styles.primaryInlineButtonText}>New Check-In</Text>
+                </Pressable>
+              </View>
+            </View>
+
             {/* Show actual health data used in prediction */}
             {prediction.health_data && (
               prediction.health_data.sleep_hours != null ||
@@ -447,14 +513,54 @@ export default function App() {
               </View>
             </View>
 
+            <View style={styles.insightGrid}>
+              <View style={styles.insightCard}>
+                <Text style={styles.insightTitle}>What helped</Text>
+                {signalSummary.strengths.length ? (
+                  signalSummary.strengths.map((item) => (
+                    <Text key={item} style={styles.insightText}>
+                      • {item}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.insightText}>
+                    • Today looked more mixed than clearly strong.
+                  </Text>
+                )}
+              </View>
+
+              <View style={styles.insightCard}>
+                <Text style={styles.insightTitle}>What to watch</Text>
+                {signalSummary.watchouts.length ? (
+                  signalSummary.watchouts.map((item) => (
+                    <Text key={item} style={styles.insightText}>
+                      • {item}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.insightText}>
+                    • No major warning signal stood out in this check-in.
+                  </Text>
+                )}
+              </View>
+            </View>
+
             <View style={styles.suggestionsCard}>
-              <Text style={styles.suggestionsTitle}>Suggestions to make tomorrow better</Text>
+              <Text style={styles.suggestionsTitle}>Action plan for tomorrow</Text>
               {dailySuggestions.map((suggestion) => (
                 <View key={suggestion} style={styles.suggestionRow}>
                   <View style={styles.suggestionDot} />
                   <Text style={styles.suggestionText}>{suggestion}</Text>
                 </View>
               ))}
+            </View>
+
+            <View style={styles.infoStrip}>
+              <Text style={styles.infoStripTitle}>How to read this result</Text>
+              <Text style={styles.infoStripText}>
+                This is a supportive directional forecast built from a short check-in. It is meant
+                to highlight patterns and next steps, not act as a clinical diagnosis.
+              </Text>
             </View>
           </View>
         ) : null}
@@ -491,6 +597,14 @@ const styles = StyleSheet.create({
   heroCompactActions: {
     flexDirection: "row",
     gap: 10,
+  },
+  resultsHero: {
+    backgroundColor: "#fff7ed",
+    borderRadius: 24,
+    padding: 18,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#fdba74",
   },
   kicker: {
     color: "#4c0519",
@@ -596,6 +710,16 @@ const styles = StyleSheet.create({
     color: "#334155",
     fontSize: 15,
   },
+  resultsHeroTitle: {
+    color: "#111827",
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "800",
+  },
+  resultsActionRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
   ghostButton: {
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -608,6 +732,19 @@ const styles = StyleSheet.create({
     color: "#9a3412",
     fontSize: 13,
     fontWeight: "700",
+  },
+  primaryInlineButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#0f766e",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primaryInlineButtonText: {
+    color: "#f0fdfa",
+    fontSize: 13,
+    fontWeight: "800",
   },
   formShell: {
     gap: 14,
@@ -843,6 +980,28 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  insightGrid: {
+    gap: 12,
+    marginTop: 14,
+  },
+  insightCard: {
+    backgroundColor: "#fffdf8",
+    borderRadius: 20,
+    padding: 18,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#e7e5e4",
+  },
+  insightTitle: {
+    color: "#111827",
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  insightText: {
+    color: "#475569",
+    fontSize: 14,
+    lineHeight: 21,
+  },
   healthDataCard: {
     backgroundColor: "#f0fdf4",
     borderRadius: 20,
@@ -923,5 +1082,23 @@ const styles = StyleSheet.create({
     color: "#44403c",
     fontSize: 14,
     lineHeight: 21,
+  },
+  infoStrip: {
+    backgroundColor: "#eff6ff",
+    borderRadius: 18,
+    padding: 16,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  infoStripTitle: {
+    color: "#1d4ed8",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  infoStripText: {
+    color: "#334155",
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
