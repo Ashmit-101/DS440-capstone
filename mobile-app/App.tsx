@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -15,6 +15,7 @@ import { API_BASE_URL, fetchSurveySchema, submitManualPrediction } from "./src/a
 import { PredictionResponse, SurveyField } from "./src/types";
 
 const LIKERT_OPTIONS = [1, 2, 3, 4, 5];
+type Screen = "home" | "checkin";
 
 function buildScoreTone(score: number) {
   if (score >= 4.1) {
@@ -26,7 +27,47 @@ function buildScoreTone(score: number) {
   return { label: "Watch", accent: "#991b1b", panel: "#fee2e2" };
 }
 
+function buildDailySuggestions(
+  responses: Record<string, number>,
+  prediction: PredictionResponse | null,
+) {
+  const ideas: string[] = [];
+  const stress = responses.stress_today;
+  const sleep = responses.sleep_quality;
+  const energy = responses.energy_today;
+  const connection = responses.social_connection;
+  const mood = responses.mood_today;
+  const score = prediction?.predicted_happy_score ?? 0;
+
+  if (sleep !== undefined && sleep <= 2) {
+    ideas.push("Aim for a lighter evening tonight with less screen time and a steadier wind-down.");
+  }
+  if (stress !== undefined && stress >= 4) {
+    ideas.push("Make tomorrow smaller on purpose by choosing one must-do task and one recovery break.");
+  }
+  if (energy !== undefined && energy <= 2) {
+    ideas.push("Plan one low-effort reset tomorrow morning, like water, a short walk, and a simple breakfast.");
+  }
+  if (connection !== undefined && connection <= 2) {
+    ideas.push("Try one small social touchpoint tomorrow, even a quick text or check-in with someone you trust.");
+  }
+  if (mood !== undefined && mood <= 2) {
+    ideas.push("Treat tomorrow like a maintenance day and focus on a few stabilizing routines instead of overloading yourself.");
+  }
+  if (score >= 3.8) {
+    ideas.push("You have some positive momentum right now, so protect it with consistent sleep and a manageable schedule.");
+  }
+
+  if (ideas.length === 0) {
+    ideas.push("Tomorrow looks fairly steady, so focus on keeping your routine consistent rather than over-correcting.");
+    ideas.push("A short midday check-in can help you hold onto the better parts of today.");
+  }
+
+  return ideas.slice(0, 3);
+}
+
 export default function App() {
+  const [screen, setScreen] = useState<Screen>("home");
   const [fields, setFields] = useState<SurveyField[]>([]);
   const [responses, setResponses] = useState<Record<string, number>>({});
   const [journalNote, setJournalNote] = useState("");
@@ -80,6 +121,10 @@ export default function App() {
   const currentField = fields[currentStep] ?? null;
   const allQuestionsAnswered = fields.length > 0 && answeredCount === fields.length;
   const scoreTone = prediction ? buildScoreTone(prediction.predicted_happy_score) : null;
+  const dailySuggestions = useMemo(
+    () => buildDailySuggestions(responses, prediction),
+    [prediction, responses],
+  );
 
   function setAnswer(fieldKey: string, value: number) {
     setResponses((current) => ({
@@ -99,6 +144,23 @@ export default function App() {
     }
     setActiveStep(currentStep - 1);
     setPrediction(null);
+  }
+
+  function startCheckIn() {
+    setScreen("checkin");
+  }
+
+  function goHome() {
+    setScreen("home");
+  }
+
+  function resetCheckIn() {
+    setResponses({});
+    setJournalNote("");
+    setActiveStep(0);
+    setPrediction(null);
+    setError(null);
+    setScreen("checkin");
   }
 
   async function handleSubmit() {
@@ -125,132 +187,166 @@ export default function App() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
       <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.hero}>
-          <Text style={styles.kicker}>Daily mood check-in</Text>
-          <Text style={styles.title}>A shorter check-in with a more usable result.</Text>
-          <Text style={styles.subtitle}>
-            Fewer questions, clearer language, and a forecast that reads like a product instead
-            of a raw model dump.
-          </Text>
-          <Text style={styles.baseUrl}>API: {API_BASE_URL}</Text>
-        </View>
+        {screen === "home" ? (
+          <>
+            <View style={styles.hero}>
+              <Text style={styles.kicker}>Mood outlook</Text>
+              <Text style={styles.title}>Start with a gentler check-in for tomorrow.</Text>
+              <Text style={styles.subtitle}>
+                This prototype turns a short daily reflection into a next-day mood forecast with
+                plain-language takeaways and a few helpful nudges.
+              </Text>
+              <Text style={styles.baseUrl}>API: {API_BASE_URL}</Text>
+            </View>
 
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>How this works</Text>
-          <Text style={styles.infoText}>
-            Fill out your daily check-in below. When you generate a forecast, we'll combine your
-            survey answers into a forecast band for tomorrow instead of showing a raw model score.
-          </Text>
-        </View>
+            <View style={styles.homeCard}>
+              <Text style={styles.homeEyebrow}>What you’ll get</Text>
+              <Text style={styles.homeTitle}>A faster flow and a clearer result.</Text>
+              <Text style={styles.homeText}>
+                Answer five quick questions, then see a forecast band, the likely drivers behind
+                it, and a few suggestions to help tomorrow feel steadier.
+              </Text>
+              <View style={styles.bulletList}>
+                <Text style={styles.bulletItem}>Five-question daily check-in</Text>
+                <Text style={styles.bulletItem}>Forecast for tomorrow’s mood</Text>
+                <Text style={styles.bulletItem}>Small suggestions to make the day feel better</Text>
+              </View>
+              <Pressable onPress={startCheckIn} style={styles.primaryHomeButton}>
+                <Text style={styles.primaryHomeButtonText}>Start Check-In</Text>
+              </Pressable>
+            </View>
 
-        {loading ? (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>How this works</Text>
+              <Text style={styles.infoText}>
+                The app loads a short survey from the backend, sends your responses for a forecast,
+                and presents the result in a more readable, product-style format.
+              </Text>
+            </View>
+          </>
+        ) : loading ? (
           <View style={styles.centerState}>
             <ActivityIndicator size="large" color="#0f766e" />
             <Text style={styles.stateText}>Loading your check-in...</Text>
           </View>
         ) : (
-          <View style={styles.formShell}>
-            <View style={styles.progressRow}>
-              <Text style={styles.progressLabel}>
-                {answeredCount} of {fields.length} answered
-              </Text>
-              <Text style={styles.progressLabel}>
-                {Math.round((answeredCount / Math.max(fields.length, 1)) * 100)}%
-              </Text>
-            </View>
-            <View style={styles.progressTrack}>
-              <View
-                style={[
-                  styles.progressFill,
-                  { width: `${(answeredCount / Math.max(fields.length, 1)) * 100}%` },
-                ]}
-              />
-            </View>
-
-            {currentField ? (
-              <View style={styles.questionCard}>
-                <Text style={styles.questionStep}>
-                  Question {Math.min(currentStep + 1, fields.length)} of {fields.length}
-                </Text>
-                <Text style={styles.questionTitle}>{currentField.label}</Text>
-                <Text style={styles.questionDescription}>{currentField.description}</Text>
-                <View style={styles.scaleLegend}>
-                  <Text style={styles.scaleLegendText}>{currentField.scale_low}</Text>
-                  <Text style={styles.scaleLegendText}>{currentField.scale_high}</Text>
-                </View>
-                <View style={styles.scaleRow}>
-                  {LIKERT_OPTIONS.map((value) => {
-                    const selected = responses[currentField.key] === value;
-                    return (
-                      <Pressable
-                        key={`${currentField.key}-${value}`}
-                        onPress={() => setAnswer(currentField.key, value)}
-                        style={[styles.scaleButton, selected && styles.scaleButtonSelected]}
-                      >
-                        <Text
-                          style={[
-                            styles.scaleButtonText,
-                            selected && styles.scaleButtonTextSelected,
-                          ]}
-                        >
-                          {value}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-
-                <View style={styles.navRow}>
-                  <Pressable
-                    onPress={goToPreviousQuestion}
-                    disabled={currentStep === 0}
-                    style={[
-                      styles.secondaryButton,
-                      currentStep === 0 && styles.secondaryButtonDisabled,
-                    ]}
-                  >
-                    <Text style={styles.secondaryButtonText}>Back</Text>
-                  </Pressable>
-                  <Text style={styles.navHint}>
-                    Tap a score to move this answer into your daily check-in.
-                  </Text>
-                </View>
+          <>
+            <View style={styles.heroCompact}>
+              <Text style={styles.kicker}>Daily mood check-in</Text>
+              <Text style={styles.compactTitle}>Let’s build your forecast for tomorrow.</Text>
+              <View style={styles.heroCompactActions}>
+                <Pressable onPress={goHome} style={styles.ghostButton}>
+                  <Text style={styles.ghostButtonText}>Home</Text>
+                </Pressable>
+                <Pressable onPress={resetCheckIn} style={styles.ghostButton}>
+                  <Text style={styles.ghostButtonText}>Start Over</Text>
+                </Pressable>
               </View>
-            ) : null}
-
-            <View style={styles.notesCard}>
-              <Text style={styles.notesTitle}>Optional note</Text>
-              <Text style={styles.notesDescription}>
-                Keep a short sentence here for the future text-analysis version. It is not used by
-                the model yet.
-              </Text>
-              <TextInput
-                multiline
-                numberOfLines={4}
-                maxLength={280}
-                onChangeText={setJournalNote}
-                placeholder="Today felt scattered, but a long walk helped."
-                placeholderTextColor="#94a3b8"
-                style={styles.notesInput}
-                value={journalNote}
-              />
             </View>
 
-            <Pressable
-              disabled={!allQuestionsAnswered || submitting}
-              onPress={handleSubmit}
-              style={[
-                styles.submitButton,
-                (!allQuestionsAnswered || submitting) && styles.submitButtonDisabled,
-              ]}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text style={styles.submitButtonText}>Generate forecast</Text>
-              )}
-            </Pressable>
-          </View>
+            <View style={styles.formShell}>
+              <View style={styles.progressRow}>
+                <Text style={styles.progressLabel}>
+                  {answeredCount} of {fields.length} answered
+                </Text>
+                <Text style={styles.progressLabel}>
+                  {Math.round((answeredCount / Math.max(fields.length, 1)) * 100)}%
+                </Text>
+              </View>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${(answeredCount / Math.max(fields.length, 1)) * 100}%` },
+                  ]}
+                />
+              </View>
+
+              {currentField ? (
+                <View style={styles.questionCard}>
+                  <Text style={styles.questionStep}>
+                    Question {Math.min(currentStep + 1, fields.length)} of {fields.length}
+                  </Text>
+                  <Text style={styles.questionTitle}>{currentField.label}</Text>
+                  <Text style={styles.questionDescription}>{currentField.description}</Text>
+                  <View style={styles.scaleLegend}>
+                    <Text style={styles.scaleLegendText}>{currentField.scale_low}</Text>
+                    <Text style={styles.scaleLegendText}>{currentField.scale_high}</Text>
+                  </View>
+                  <View style={styles.scaleRow}>
+                    {LIKERT_OPTIONS.map((value) => {
+                      const selected = responses[currentField.key] === value;
+                      return (
+                        <Pressable
+                          key={`${currentField.key}-${value}`}
+                          onPress={() => setAnswer(currentField.key, value)}
+                          style={[styles.scaleButton, selected && styles.scaleButtonSelected]}
+                        >
+                          <Text
+                            style={[
+                              styles.scaleButtonText,
+                              selected && styles.scaleButtonTextSelected,
+                            ]}
+                          >
+                            {value}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  <View style={styles.navRow}>
+                    <Pressable
+                      onPress={goToPreviousQuestion}
+                      disabled={currentStep === 0}
+                      style={[
+                        styles.secondaryButton,
+                        currentStep === 0 && styles.secondaryButtonDisabled,
+                      ]}
+                    >
+                      <Text style={styles.secondaryButtonText}>Back</Text>
+                    </Pressable>
+                    <Text style={styles.navHint}>
+                      Tap a score to move this answer into your daily check-in.
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+
+              <View style={styles.notesCard}>
+                <Text style={styles.notesTitle}>Optional note</Text>
+                <Text style={styles.notesDescription}>
+                  Keep a short sentence here for the future text-analysis version. It is not used
+                  by the model yet.
+                </Text>
+                <TextInput
+                  multiline
+                  numberOfLines={4}
+                  maxLength={280}
+                  onChangeText={setJournalNote}
+                  placeholder="Today felt scattered, but a long walk helped."
+                  placeholderTextColor="#94a3b8"
+                  style={styles.notesInput}
+                  value={journalNote}
+                />
+              </View>
+
+              <Pressable
+                disabled={!allQuestionsAnswered || submitting}
+                onPress={handleSubmit}
+                style={[
+                  styles.submitButton,
+                  (!allQuestionsAnswered || submitting) && styles.submitButtonDisabled,
+                ]}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Generate forecast</Text>
+                )}
+              </Pressable>
+            </View>
+          </>
         )}
 
         {error ? (
@@ -350,6 +446,16 @@ export default function App() {
                 ) : null}
               </View>
             </View>
+
+            <View style={styles.suggestionsCard}>
+              <Text style={styles.suggestionsTitle}>Suggestions to make tomorrow better</Text>
+              {dailySuggestions.map((suggestion) => (
+                <View key={suggestion} style={styles.suggestionRow}>
+                  <View style={styles.suggestionDot} />
+                  <Text style={styles.suggestionText}>{suggestion}</Text>
+                </View>
+              ))}
+            </View>
           </View>
         ) : null}
       </ScrollView>
@@ -374,12 +480,30 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 8,
   },
+  heroCompact: {
+    backgroundColor: "#fff7ed",
+    borderRadius: 24,
+    padding: 18,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#fdba74",
+  },
+  heroCompactActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
   kicker: {
     color: "#4c0519",
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 1.1,
     textTransform: "uppercase",
+  },
+  compactTitle: {
+    color: "#111827",
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "800",
   },
   title: {
     color: "#fff7ed",
@@ -395,6 +519,54 @@ const styles = StyleSheet.create({
   baseUrl: {
     color: "#ffe4e6",
     fontSize: 12,
+  },
+  homeCard: {
+    backgroundColor: "#fffdf8",
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "#e7e5e4",
+    gap: 12,
+  },
+  homeEyebrow: {
+    color: "#0f766e",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  homeTitle: {
+    color: "#111827",
+    fontSize: 26,
+    lineHeight: 30,
+    fontWeight: "800",
+  },
+  homeText: {
+    color: "#475569",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  bulletList: {
+    gap: 8,
+    paddingTop: 4,
+  },
+  bulletItem: {
+    color: "#334155",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  primaryHomeButton: {
+    marginTop: 6,
+    backgroundColor: "#0f766e",
+    borderRadius: 18,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primaryHomeButtonText: {
+    color: "#f0fdfa",
+    fontSize: 16,
+    fontWeight: "800",
   },
   infoCard: {
     backgroundColor: "#ecfdf5",
@@ -423,6 +595,19 @@ const styles = StyleSheet.create({
   stateText: {
     color: "#334155",
     fontSize: 15,
+  },
+  ghostButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#fdba74",
+    backgroundColor: "#ffffff",
+  },
+  ghostButtonText: {
+    color: "#9a3412",
+    fontSize: 13,
+    fontWeight: "700",
   },
   formShell: {
     gap: 14,
@@ -706,5 +891,37 @@ const styles = StyleSheet.create({
     color: "#166534",
     fontSize: 14,
     fontWeight: "700",
+  },
+  suggestionsCard: {
+    marginTop: 14,
+    backgroundColor: "#fffdf8",
+    borderRadius: 20,
+    padding: 18,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+  },
+  suggestionsTitle: {
+    color: "#854d0e",
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  suggestionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#f59e0b",
+    marginTop: 6,
+  },
+  suggestionText: {
+    flex: 1,
+    color: "#44403c",
+    fontSize: 14,
+    lineHeight: 21,
   },
 });
